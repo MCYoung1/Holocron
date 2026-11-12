@@ -1,0 +1,11 @@
+import 'dotenv/config';
+import pg from 'pg';
+
+const { Pool } = pg;
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  throw new Error('DATABASE_URL must be set in the server environment.');
+}
+
+export const pool = new Pool({ connectionString: databaseUrl });

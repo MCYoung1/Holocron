@@ -1,0 +1,114 @@
+# Holocron
+
+Holocron is a Star Wars quiz web app for browsing, creating, and playing fan-made quizzes. Users can register, author quizzes with multiple-choice questions, take quizzes, and view their scores.
+
+## Stack
+
+- **Frontend:** React 18, Vite, React Router 6, plain CSS
+- **Backend:** Node.js 20, Express (ES modules), `pg`, bcryptjs, jsonwebtoken, dotenv, cors
+- **Database:** PostgreSQL
+- **Authentication:** JWT bearer tokens; the client persists the token and user in localStorage
+
+## Data model
+
+```text
++-------+       1       * +--------+       1       * +-----------+
+| users |-----------------| quizzes|-----------------| questions |
++-------+                 +--------+                 +-----------+
+    |                         |
+    | 1                       | 1
+    |                         |
+    | 0..1                    | *
++----------+------------------+
+| attempts |
++----------+
+```
+
+- A user owns quizzes; deleting a user cascades to their quizzes.
+- A quiz contains questions and attempts; deleting a quiz cascades to both.
+- An attempt may belong to a user. Its user reference becomes `NULL` if that user is deleted.
+- Each question stores four answer options as JSONB and a correct option index from 0 to 3.
+
+The authoritative schema is [server/schema.sql](./server/schema.sql).
+
+## API
+
+All paths are relative to the API origin, defaulting to `http://localhost:3000`. Protected requests use `Authorization: Bearer <token>`.
+
+| Method | Endpoint | Access | Purpose |
+|---|---|---|---|
+| POST | `/auth/register` | Public | Create an account; returns user and token |
+| POST | `/auth/login` | Public | Authenticate; returns user and token |
+| GET | `/quizzes` | Public | List quizzes with author and question count |
+| GET | `/quizzes/:id` | Public | Get quiz details, author, and question count |
+| GET | `/quizzes/:id/play` | Public | Get questions without correct answer indexes |
+| POST | `/quizzes/:id/attempts` | Public | Submit answers; server scores and records an anonymous attempt |
+| GET | `/me/quizzes` | Authenticated | List the signed-in user's quizzes |
+| POST | `/quizzes` | Authenticated | Create a quiz |
+| PUT | `/quizzes/:id` | Owner only | Partially update a quiz |
+| DELETE | `/quizzes/:id` | Owner only | Delete a quiz and its questions |
+| POST | `/quizzes/:id/questions` | Quiz owner | Add a question |
+| PUT | `/questions/:id` | Parent quiz owner | Partially update a question |
+| DELETE | `/questions/:id` | Parent quiz owner | Delete a question |
+
+## Local setup
+
+Install Node.js 20 and PostgreSQL, including its command-line tools (`createdb` and `psql`). From PowerShell, create the database and apply its schema:
+
+```powershell
+createdb -U postgres holocron
+Set-Location .\server
+psql -U postgres -d holocron -f .\schema.sql
+```
+
+In `server`, copy `.env.example` to `.env` and set `DATABASE_URL` to match your local PostgreSQL username, password, host, and database. Set `JWT_SECRET` to a long, private random value. Keep this file local; do not commit it.
+
+In `client/.env`, set the API URL to the local server's default port:
+
+```env
+VITE_API_URL=http://localhost:3000
+```
+
+Install dependencies and run the two development servers in separate PowerShell terminals:
+
+```powershell
+Set-Location C:\path\to\holocron\server
+npm.cmd install
+npm.cmd run dev
+```
+
+```powershell
+Set-Location C:\path\to\holocron\client
+npm.cmd install
+npm.cmd run dev
+```
+
+Open the Vite URL (normally `http://localhost:5173`). Configure `CLIENT_ORIGIN=http://localhost:5173` in `server/.env` for local browser requests.
+
+## Deployment plan
+
+1. **Database — Neon:** Create a PostgreSQL database and use its connection string as the Render service's `DATABASE_URL`. Apply `server/schema.sql` to the Neon database with `psql` or the Neon SQL editor.
+2. **API — Render:** Create a web service using `server` as its root directory, `npm install` as its build command, and `npm start` as its start command. Configure:
+   - `DATABASE_URL`: Neon connection string (keep server-side; enable SSL as required by the provider).
+   - `JWT_SECRET`: a strong, private production secret.
+   - `CLIENT_ORIGIN`: exact deployed frontend origin, such as `https://your-site.netlify.app`.
+   - `PORT`: use Render's assigned port if the platform does not set it automatically.
+3. **Frontend — Netlify or Vercel:** Set `client` as the project root, `npm run build` as the build command, and `dist` as the output directory. Set `VITE_API_URL` to the deployed Render API origin. This value is embedded in the public frontend build and must never contain a secret.
+4. Configure the frontend host's SPA fallback so React Router paths resolve to `index.html`, and set the Render `CLIENT_ORIGIN` to the final deployed domain. Rebuild/redeploy the frontend after changing `VITE_API_URL`.
+
+## Risks & mitigations
+
+- **JWT secret exposure:** Keep `JWT_SECRET` only in the server's ignored `.env` locally and in the backend host's secret environment settings in production. Never put it in client files or a `VITE_*` variable. Rotate it if exposed; existing tokens will then need to be reissued.
+- **Database credentials:** Keep `DATABASE_URL` server-side and out of source control. Use separate credentials for development and production, and restrict production database access to the backend where possible.
+- **Public attempt endpoint:** Attempt submission is intentionally public and creates anonymous records. The server still calculates scores from stored answer keys; consider rate limiting and abuse monitoring before public launch.
+- **Star Wars data dependency:** SWAPI integration is optional and is not required by the quiz flows. If added, its public endpoints are keyless; do not make app availability depend on it.
+
+## How to contribute
+
+Create a focused branch, make a small change that follows the existing React/Express and parameterized-SQL patterns, and update relevant documentation. Run `npm.cmd run build` from `client` and check the affected API routes before opening a pull request. Never include `.env` files, credentials, or generated `node_modules`/`dist` directories.
+
+For end-user guidance, see [Instructions.md](./Instructions.md).
+
+## License
+
+This project is released under the MIT License. See [LICENSE](./LICENSE).
