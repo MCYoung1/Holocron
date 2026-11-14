@@ -59,12 +59,52 @@
 - Aligned the client API URL with the server's default local port (`http://localhost:3000`).
 - Final scan: no hardcoded credentials/secrets found in client or server source; SQL values are passed as pg parameters; protected user/owner routes have auth and ownership middleware. Public auth, quiz reads, and attempt submission are intentionally unauthenticated.
 
+## Stage 10 — Complete gameplay flow (done)
+
+- Added previous/next navigation, answer selection without automatic advancement, and skip navigation.
+- Added a review screen that shows answered/skipped questions and allows returning to any question before submission.
+- Saved per-quiz answers and current position in `sessionStorage` to resume after refresh in the same tab.
+- Added final submission and score display; skipped and unanswered questions count as incorrect according to the existing server scorer.
+- Updated the PRD and README to document session-scoped progress and gameplay behavior.
+
+## Scoring and rankings (done)
+
+- Added the server-side `RankService` to calculate the rounded percentage and assign Youngling, Padawan, Jedi Knight, Jedi Master, or Lore Keeper at the requested thresholds.
+- Extended attempt submission to return the persisted attempt ID, score, percentage, rank, and question results. Attempts continue to be recorded in PostgreSQL; skipped answers count as incorrect.
+- Updated the results page to show score, percentage, and rank.
+- Added boundary and invalid-input tests for rank calculation, plus updated README, PRD, and user instructions.
+
+## True/False questions (done)
+
+- Added question types for four-option multiple choice and two-option True/False questions. Existing questions default to multiple choice.
+- Added authoring controls to select a type and select exactly one correct answer; True/False options are fixed as **True** and **False**.
+- Updated the play endpoint, gameplay answer validation, and quiz form submission to support two-option questions without revealing the answer key.
+- Updated the clean-install schema and added `server/migrations/001_true_false_questions.sql` for existing databases. Apply that migration before starting the updated server.
+- Added tests for valid/invalid True/False options and retained multiple-choice validation coverage. Updated README, PRD, and user instructions.
+
+## Stage 11 — User profiles (done)
+
+- Added public profiles showing username, avatar or a fallback, quizzes created, quizzes played, and average score.
+- Added PostgreSQL avatar byte storage and an owner-only avatar upload endpoint, limited to 2 MB and validated as JPEG, PNG, GIF, or WebP by file signature.
+- Linked profile pages from quiz author names and added a signed-in **My Profile** navigation link.
+- Associated attempts with the signed-in player when a bearer token is supplied; anonymous quiz attempts remain supported. Profile statistics are calculated from owned quizzes and recorded attempts.
+- Added a migration for existing databases at `server/migrations/002_user_profiles.sql`; apply it before starting the updated API. Updated README, PRD, and Instructions.
+- Added avatar validation tests and verified server tests, server syntax, client build, migration, and profile/stat queries.
+- Verify with `npm.cmd test` and `npm.cmd run build` from the `server` and `client` folders respectively.
+
+## Stage 12 — Bootstrap 5 styling (done)
+
+- Added Bootstrap 5 to the client and imported its stylesheet before the Holocron theme overrides.
+- Restyled the application navigation and all pages with Bootstrap responsive layout, cards, buttons, alerts, and form controls.
+- Preserved Holocron's dark theme, gold and blue accents, selected-answer state, and profile avatar styling in the custom stylesheet.
+- Updated README, PRD, and user instructions to document the Bootstrap-based UI.
+- Validation: `npm.cmd run build` from `client`.
+
 ## Local quiz account
 
 - Username: `Skywalker`
 - Email: `skywalker@example.test` (local testing only; this is not a real mailbox).
-- pword: 8syYWKNZpquMoHI79aSNwX6H
-- A generated password was provided in the setup conversation. It is intentionally not stored in this project document; keep credentials in a private password manager or another untracked local secret store.
+- A generated password was previously exposed in this project document and has been removed. Rotate the account password before using it beyond local testing; keep credentials in a private password manager or another untracked local secret store.
 - Five category quizzes (Films, Characters, Planets, Vehicles, Lore) were created and verified with 10 questions each.
 
 ### Setup and test
@@ -153,10 +193,19 @@
 
    A successful delete returns HTTP 204. Change the IDs and body values to test quiz/question updates or question deletion; update routes accept partial JSON fields.
 
-9. To test the full client flow, run `npm.cmd run dev` in `client` and visit `http://localhost:5173`. Register at `/auth`; after successful registration the app navigates to `/my`. Choose `+ New quiz`, create a quiz with at least one question and four options, and choose its correct answer. Submit to view the quiz detail page, then choose `Start quiz`, answer each question, and view the score. You can also use Browse to open the quiz, and delete it from My Quizzes afterward.
+9. To test the full client flow, run `npm.cmd run dev` in `client` and visit `http://localhost:5173`. Register at `/auth`; after successful registration the app navigates to `/my`. Choose `+ New quiz`, create a quiz with multiple-choice and/or True/False questions, and select each correct answer. Submit to view the quiz detail page, then choose `Start quiz`, answer each question, and view the score and rank. You can also use Browse to open the quiz, and delete it from My Quizzes afterward.
 
    The client `.env` points to the API's default port 3000. If you change the server `PORT`, also change `VITE_API_URL` and restart both development servers.
 
+### Stage 10 gameplay test
+
+1. Open a quiz that has questions and select **Start quiz**.
+2. Select an answer, move Next, then Previous; confirm the selected answer remains recorded.
+3. Skip a question and continue. Open the review screen to see answered/skipped status.
+4. Refresh while playing; confirm the current question and answers resume in the same tab.
+5. From review, revisit a question if desired, then submit. Confirm skipped questions count as incorrect and the score is displayed.
+6. Progress is scoped to the current browser tab session; it is not synchronized to another tab or device.
+
 ### Next
 
-Wait for approval before starting Phase 8.
+All requested project phases are complete.

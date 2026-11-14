@@ -2,8 +2,12 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import cors from 'cors';
 import express from 'express';
-import { requireAuth, sign } from './auth.js';
+import { optionalAuth, requireAuth, sign } from './auth.js';
+import { isValidAvatar } from './avatarValidation.js';
 import { pool } from './db.js';
+import { getAvatar, getPublicProfile, saveAvatar } from './profileService.js';
+import { isValidQuestion } from './questionService.js';
+import { RankService } from './rankService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -73,6 +77,57 @@ app.post('/auth/login', async (request, response) => {
     return response.status(500).json({ error: 'Unable to log in.' });
   }
 });
+
+app.get('/users/:username', async (request, response) => {
+  try {
+    const profile = await getPublicProfile(request.params.username);
+    if (!profile) {
+      return response.status(404).json({ error: 'User profile not found.' });
+    }
+    return response.json(profile);
+  } catch (error) {
+    console.error('Loading public user profile failed:', error);
+    return response.status(500).json({ error: 'Unable to load user profile.' });
+  }
+});
+
+app.get('/users/:username/avatar', async (request, response) => {
+  try {
+    const avatar = await getAvatar(request.params.username);
+    if (!avatar) {
+      return response.status(404).json({ error: 'User avatar not found.' });
+    }
+    response.set('Content-Type', avatar.mimeType);
+    response.set('Cache-Control', 'public, max-age=3600');
+    response.set('X-Content-Type-Options', 'nosniff');
+    return response.send(avatar.data);
+  } catch (error) {
+    console.error('Loading user avatar failed:', error);
+    return response.status(500).json({ error: 'Unable to load user avatar.' });
+  }
+});
+
+app.put(
+  '/me/avatar',
+  requireAuth,
+  express.raw({ type: 'application/octet-stream', limit: '2mb' }),
+  async (request, response) => {
+    const mimeType = request.get('x-avatar-content-type') || '';
+    if (!isValidAvatar(mimeType, request.body)) {
+      return response.status(400).json({
+        error: 'Upload a valid JPEG, PNG, GIF, or WebP image no larger than 2 MB.',
+      });
+    }
+
+    try {
+      await saveAvatar(request.user.id, mimeType, request.body);
+      return response.status(204).end();
+    } catch (error) {
+      console.error('Saving user avatar failed:', error);
+      return response.status(500).json({ error: 'Unable to save user avatar.' });
+    }
+  },
+);
 
 function parseQuizId(value) {
   if (!/^[1-9]\d*$/.test(value)) {
@@ -209,7 +264,7 @@ app.get('/quizzes/:id/play', async (request, response) => {
 
     // Keep correct_index out of the play response so answers cannot be read before submission.
     const questions = await pool.query(
-      `SELECT id, text, options, position
+      `SELECT id, text, question_type AS "questionType", options, position
        FROM questions
        WHERE quiz_id = $1
        ORDER BY position ASC`,
@@ -222,7 +277,7 @@ app.get('/quizzes/:id/play', async (request, response) => {
   }
 });
 
-app.post('/quizzes/:id/attempts', async (request, response) => {
+app.post('/quizzes/:id/attempts', optionalAuth, async (request, response) => {
   const quizId = parseQuizId(request.params.id);
   if (!quizId) {
     return response.status(400).json({ error: 'Quiz ID must be a positive integer.' });
@@ -257,12 +312,21 @@ app.post('/quizzes/:id/attempts', async (request, response) => {
 
     // Score only against the answer key stored in the database, never a client-supplied key.
     const questionResult = await pool.query(
-      `SELECT id, correct_index
+      `SELECT id, correct_index, jsonb_array_length(options) AS option_count
        FROM questions
        WHERE quiz_id = $1
        ORDER BY position ASC`,
       [quizId],
     );
+    if (questionResult.rows.some((question) => {
+      const answer = answers[String(question.id)];
+      return answer !== undefined && answer >= question.option_count;
+    })) {
+      return response.status(400).json({
+        error: 'An answer index is outside the available options for its question.',
+      });
+    }
+
     const results = questionResult.rows.map((question) => ({
       questionId: question.id,
       correct: answers[String(question.id)] === question.correct_index,
@@ -270,14 +334,23 @@ app.post('/quizzes/:id/attempts', async (request, response) => {
     }));
     const score = results.filter((result) => result.correct).length;
     const total = results.length;
+    const { percentage, rank } = RankService.calculate(score, total);
 
-    await pool.query(
-      `INSERT INTO attempts (quiz_id, score, total)
-       VALUES ($1, $2, $3)`,
-      [quizId, score, total],
+    const attempt = await pool.query(
+      `INSERT INTO attempts (quiz_id, user_id, score, total)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [quizId, request.user?.id ?? null, score, total],
     );
 
-    return response.status(201).json({ score, total, results });
+    return response.status(201).json({
+      attemptId: attempt.rows[0].id,
+      score,
+      total,
+      percentage,
+      rank,
+      results,
+    });
   } catch (error) {
     console.error('Recording quiz attempt failed:', error);
     return response.status(500).json({ error: 'Unable to record quiz attempt.' });
@@ -377,31 +450,32 @@ app.delete('/quizzes/:id', requireAuth, ownQuiz, async (request, response) => {
 });
 
 app.post('/quizzes/:id/questions', requireAuth, ownQuiz, async (request, response) => {
-  const { text, options, correctIndex } = request.body ?? {};
+  const {
+    text,
+    questionType = 'multiple_choice',
+    options,
+    correctIndex,
+  } = request.body ?? {};
   if (
     !validText(text) ||
-    !Array.isArray(options) ||
-    options.length !== 4 ||
-    options.some((option) => !validText(option)) ||
-    !Number.isInteger(correctIndex) ||
-    correctIndex < 0 ||
-    correctIndex > 3
+    !isValidQuestion(questionType, options, correctIndex)
   ) {
     return response.status(400).json({
-      error: 'Question text, four non-empty options, and correctIndex from 0 to 3 are required.',
+      error: 'Question text, a valid question type, the required non-empty options, and a valid correctIndex are required.',
     });
   }
 
   try {
     // Assign each new question the next position within its quiz.
     const result = await pool.query(
-      `INSERT INTO questions (quiz_id, text, options, correct_index, position)
+      `INSERT INTO questions (quiz_id, text, question_type, options, correct_index, position)
        VALUES (
-         $1, $2, $3::jsonb, $4,
+         $1, $2, $3, $4::jsonb, $5,
          COALESCE((SELECT MAX(position) FROM questions WHERE quiz_id = $1), 0) + 1
        )
-       RETURNING id, quiz_id, text, options, correct_index AS "correctIndex", position`,
-      [request.quiz.id, text.trim(), JSON.stringify(options), correctIndex],
+       RETURNING id, quiz_id, text, question_type AS "questionType", options,
+                 correct_index AS "correctIndex", position`,
+      [request.quiz.id, text.trim(), questionType, JSON.stringify(options), correctIndex],
     );
     return response.status(201).json(result.rows[0]);
   } catch (error) {
@@ -411,30 +485,42 @@ app.post('/quizzes/:id/questions', requireAuth, ownQuiz, async (request, respons
 });
 
 app.put('/questions/:id', requireAuth, ownQuestion, async (request, response) => {
-  const { text, options, correctIndex } = request.body ?? {};
+  const { text, questionType, options, correctIndex } = request.body ?? {};
   if (
     (text !== undefined && text !== null && !validText(text)) ||
-    (options !== undefined && options !== null &&
-      (!Array.isArray(options) || options.length !== 4 || options.some((option) => !validText(option)))) ||
-    (correctIndex !== undefined && correctIndex !== null &&
-      (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex > 3))
+    (questionType !== undefined && questionType !== null &&
+      !['multiple_choice', 'true_false'].includes(questionType))
   ) {
     return response.status(400).json({ error: 'Question fields are invalid.' });
   }
 
   try {
+    const currentQuestion = await pool.query(
+      'SELECT question_type, options, correct_index FROM questions WHERE id = $1',
+      [request.question.id],
+    );
+    const updatedType = questionType ?? currentQuestion.rows[0].question_type;
+    const updatedOptions = options ?? currentQuestion.rows[0].options;
+    const updatedCorrectIndex = correctIndex ?? currentQuestion.rows[0].correct_index;
+    if (!isValidQuestion(updatedType, updatedOptions, updatedCorrectIndex)) {
+      return response.status(400).json({ error: 'Question fields are invalid for the selected question type.' });
+    }
+
     const result = await pool.query(
       `UPDATE questions
        SET text = COALESCE($2, text),
-           options = COALESCE($3::jsonb, options),
-           correct_index = COALESCE($4, correct_index)
+           question_type = $3,
+           options = $4::jsonb,
+           correct_index = $5
        WHERE id = $1
-       RETURNING id, quiz_id, text, options, correct_index AS "correctIndex", position`,
+       RETURNING id, quiz_id, text, question_type AS "questionType", options,
+                 correct_index AS "correctIndex", position`,
       [
         request.question.id,
         text === undefined || text === null ? null : text.trim(),
-        options === undefined || options === null ? null : JSON.stringify(options),
-        correctIndex === undefined || correctIndex === null ? null : correctIndex,
+        updatedType,
+        JSON.stringify(updatedOptions),
+        updatedCorrectIndex,
       ],
     );
     return response.json(result.rows[0]);
@@ -452,6 +538,18 @@ app.delete('/questions/:id', requireAuth, ownQuestion, async (request, response)
     console.error('Deleting quiz question failed:', error);
     return response.status(500).json({ error: 'Unable to delete question.' });
   }
+});
+
+app.use((error, _request, response, _next) => {
+  if (error.type === 'entity.too.large') {
+    return response.status(413).json({ error: 'Avatar image must be no larger than 2 MB.' });
+  }
+  if (error.type === 'entity.parse.failed') {
+    return response.status(400).json({ error: 'Request body is invalid.' });
+  }
+
+  console.error('Unhandled API request error:', error);
+  return response.status(500).json({ error: 'Unable to process the request.' });
 });
 
 app.listen(port, () => {

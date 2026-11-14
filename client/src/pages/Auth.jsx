@@ -38,14 +38,17 @@ export default function Auth() {
   }
 
   return (
-    <section className="card">
-      <h1>{isRegistering ? 'Create your account' : 'Log in'}</h1>
+    <section className="card holocron-card auth-card mx-auto">
+      <div className="card-body p-4 p-md-5">
+      <span className="tag mb-2">Welcome to Holocron</span>
+      <h1 className="h2 mb-4">{isRegistering ? 'Create your account' : 'Log in'}</h1>
       <form onSubmit={handleSubmit}>
         {isRegistering && (
-          <p>
-            <label>
+          <div className="mb-3">
+            <label className="form-label w-100">
               Username
               <input
+                className="form-control mt-1"
                 type="text"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
@@ -53,12 +56,13 @@ export default function Auth() {
                 required
               />
             </label>
-          </p>
+          </div>
         )}
-        <p>
-          <label>
+        <div className="mb-3">
+          <label className="form-label w-100">
             Email
             <input
+              className="form-control mt-1"
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -66,11 +70,12 @@ export default function Auth() {
               required
             />
           </label>
-        </p>
-        <p>
-          <label>
+        </div>
+        <div className="mb-3">
+          <label className="form-label w-100">
             Password
             <input
+              className="form-control mt-1"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -78,18 +83,19 @@ export default function Auth() {
               required
             />
           </label>
-        </p>
-        <button className="btn primary" type="submit" disabled={submitting}>
+        </div>
+        <button className="btn btn-warning w-100" type="submit" disabled={submitting}>
           {submitting ? 'Please wait...' : isRegistering ? 'Register' : 'Log in'}
         </button>
-        {error && <p role="alert">{error}</p>}
+        {error && <div className="alert alert-danger mt-3 mb-0" role="alert">{error}</div>}
       </form>
-      <p className="muted">
+      <p className="text-secondary mt-4 mb-0">
         {isRegistering ? 'Already have an account?' : 'New to Holocron?'}{' '}
-        <button className="nav-action" type="button" onClick={toggleMode}>
+        <button className="btn btn-link nav-action p-0" type="button" onClick={toggleMode}>
           {isRegistering ? 'Log in' : 'Register'}
         </button>
       </p>
+      </div>
     </section>
   );
 }

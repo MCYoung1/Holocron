@@ -46,27 +46,32 @@ export default function MyQuizzes() {
 
   return (
     <section>
-      <div className="grid">
-        <h1>My Quizzes</h1>
-        <Link className="btn primary" to="/new">+ New quiz</Link>
+      <div className="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
+        <div>
+          <span className="tag mb-2">Your collection</span>
+          <h1 className="mb-0">My Quizzes</h1>
+        </div>
+        <Link className="btn btn-warning" to="/new">+ New quiz</Link>
       </div>
 
-      {loading && <p className="muted">Loading your quizzes...</p>}
-      {!loading && error && <p role="alert">{error}</p>}
+      {loading && <p className="text-secondary">Loading your quizzes...</p>}
+      {!loading && error && <div className="alert alert-danger" role="alert">{error}</div>}
       {!loading && !error && quizzes.length === 0 && (
-        <p className="muted">You haven’t created any quizzes yet.</p>
+        <div className="alert holocron-card border" role="status">You haven’t created any quizzes yet.</div>
       )}
       {!loading && quizzes.length > 0 && (
-        <div className="grid">
+        <div className="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
           {quizzes.map((quiz) => (
-            <article className="card" key={quiz.id}>
-              <span className="tag">{quiz.category}</span>
-              <h2>{quiz.title}</h2>
-              <p className="muted">{quiz.question_count} questions</p>
-              <div className="grid">
-                <Link className="btn" to={`/quiz/${quiz.id}`}>View</Link>
+            <div className="col" key={quiz.id}>
+            <article className="card holocron-card h-100">
+              <div className="card-body d-flex flex-column">
+              <span className="tag align-self-start">{quiz.category}</span>
+              <h2 className="h4 mt-3">{quiz.title}</h2>
+              <p className="text-secondary">{quiz.question_count} questions</p>
+              <div className="d-flex gap-2 mt-auto">
+                <Link className="btn btn-outline-primary" to={`/quiz/${quiz.id}`}>View</Link>
                 <button
-                  className="btn"
+                  className="btn btn-outline-danger"
                   type="button"
                   onClick={() => deleteQuiz(quiz)}
                   disabled={deletingId === quiz.id}
@@ -74,7 +79,9 @@ export default function MyQuizzes() {
                   {deletingId === quiz.id ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
+              </div>
             </article>
+            </div>
           ))}
         </div>
       )}

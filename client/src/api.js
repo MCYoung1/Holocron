@@ -1,9 +1,9 @@
-const API_URL = import.meta.env.VITE_API_URL;
+export const API_URL = import.meta.env.VITE_API_URL;
 
-export async function api(path, { method = 'GET', body, token } = {}) {
-  const headers = {};
+export async function api(path, { method = 'GET', body, token, contentType, headers: extraHeaders = {} } = {}) {
+  const headers = { ...extraHeaders };
   if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
+    headers['Content-Type'] = contentType || 'application/json';
   }
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -12,7 +12,7 @@ export async function api(path, { method = 'GET', body, token } = {}) {
   const response = await fetch(`${API_URL}${path}`, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : contentType ? body : JSON.stringify(body),
   });
 
   if (response.status === 204) {

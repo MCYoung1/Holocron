@@ -40,3 +40,31 @@ export function requireAuth(request, response, next) {
     return response.status(401).json({ error: 'Invalid or expired authorization token.' });
   }
 }
+
+export function optionalAuth(request, response, next) {
+  const authorization = request.get('authorization') || '';
+  if (!authorization) {
+    return next();
+  }
+
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    return response.status(401).json({ error: 'Invalid authorization token.' });
+  }
+
+  try {
+    const payload = jwt.verify(match[1], getJwtSecret());
+    if (typeof payload !== 'object' || !payload.sub) {
+      return response.status(401).json({ error: 'Invalid authorization token.' });
+    }
+
+    request.user = {
+      id: payload.sub,
+      username: payload.username,
+      email: payload.email,
+    };
+    return next();
+  } catch (_error) {
+    return response.status(401).json({ error: 'Invalid or expired authorization token.' });
+  }
+}

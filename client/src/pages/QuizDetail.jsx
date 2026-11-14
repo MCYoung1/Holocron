@@ -37,30 +37,33 @@ export default function QuizDetail() {
   }, [id]);
 
   if (loading) {
-    return <p className="muted">Loading quiz...</p>;
+    return <p className="text-secondary">Loading quiz...</p>;
   }
 
   if (error === 'Quiz not found.') {
-    return <section className="card"><h1>Quiz not found</h1></section>;
+    return <section className="card holocron-card"><div className="card-body"><h1>Quiz not found</h1></div></section>;
   }
 
   if (error) {
-    return <p role="alert">{error}</p>;
+    return <div className="alert alert-danger" role="alert">{error}</div>;
   }
 
   if (!quiz) {
-    return <section className="card"><h1>Quiz not found</h1></section>;
+    return <section className="card holocron-card"><div className="card-body"><h1>Quiz not found</h1></div></section>;
   }
 
   return (
-    <article className="card">
+    <article className="card holocron-card shadow-sm">
+      <div className="card-body p-4 p-md-5">
       <span className="tag">{quiz.category}</span>
-      <h1>{quiz.title}</h1>
-      <p>{quiz.description}</p>
-      <p className="muted">
-        by {quiz.author} · {quiz.question_count} questions · {quiz.difficulty}
+      <h1 className="display-6 mt-3">{quiz.title}</h1>
+      <p className="fs-5">{quiz.description}</p>
+      <p className="text-secondary">
+        by <Link to={`/users/${encodeURIComponent(quiz.author)}`}>{quiz.author}</Link>
+        {' · '}{quiz.question_count} questions · {quiz.difficulty}
       </p>
-      <Link className="btn primary" to={`/quiz/${quiz.id}/play`}>Start quiz</Link>
+      <Link className="btn btn-warning btn-lg mt-2" to={`/quiz/${quiz.id}/play`}>Start quiz</Link>
+      </div>
     </article>
   );
 }
