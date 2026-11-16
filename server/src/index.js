@@ -15,6 +15,16 @@ const port = process.env.PORT || 3000;
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*' }));
 app.use(express.json());
 
+app.get('/health', async (_request, response) => {
+  try {
+    await pool.query('SELECT 1');
+    return response.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    return response.status(503).json({ error: 'Database is unavailable.' });
+  }
+});
+
 app.post('/auth/register', async (request, response) => {
   const { username, email, password } = request.body ?? {};
 

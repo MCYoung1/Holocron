@@ -100,6 +100,24 @@
 - Updated README, PRD, and user instructions to document the Bootstrap-based UI.
 - Validation: `npm.cmd run build` from `client`.
 
+## Stage 13 — Docker containerization (done)
+
+- Added a three-service development Compose stack with persistent PostgreSQL storage, local-only ports, health checks, and service-name database networking.
+- Added Node 20 development/production Docker targets and an Nginx production client that proxies same-origin `/api` requests.
+- Added a Vite development proxy so the browser uses `/api` rather than a Docker-only hostname; the production Vite build also uses `/api` at build time.
+- Added a schema-aware `db:migrate` command, fresh-volume schema initialization, and documented safe migration/backup steps for existing data.
+- Added root `.dockerignore` and `.env.example`; secrets remain local and are not copied into images.
+- Updated README, PRD, and Instructions with commands, persistence, migrations, Vite environment behavior, and troubleshooting.
+- Validation passed: server tests and syntax checks, client production build, migration skip against the current database, Compose config, development/production Docker image builds, and an isolated fresh-volume stack smoke test including frontend HTTP 200, proxied API health, and migration checks.
+
+## Compose data migration (done)
+
+- Migrated the existing host PostgreSQL data into the previously empty Docker Compose database without changing the source database.
+- Verified destination totals: 3 users, 7 quizzes, 70 questions, and 15 attempts; Skywalker and all 7 of their quizzes are present.
+- Verified the question type mix (60 multiple-choice and 10 True/False), avatar columns/data, and the next quiz identity value.
+- Confirmed both the API endpoint and the browser-facing `/api/quizzes` proxy return all 7 quizzes.
+- Documented that Compose data is local and separate from any Render database. Render will need its own schema/migrations and a deliberate, backup-first data import if local data should be deployed.
+
 ## Local quiz account
 
 - Username: `Skywalker`

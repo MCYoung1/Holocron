@@ -63,6 +63,75 @@ Every account has a public profile at `/users/:username` with its username, avat
 
 The client uses Bootstrap 5 for responsive layout, navigation, cards, buttons, and form controls. A small custom stylesheet layers Holocron's dark background, gold accent (`#ffe81f`), blue accent (`#4f9dff`), quiz answer states, and profile-avatar details over Bootstrap.
 
+## Docker local development
+
+Docker Compose runs the Vite client, Express API, and PostgreSQL database. The database is stored in the named `holocron-postgres-data` volume. The optional database port defaults to `127.0.0.1:5433` (override with `POSTGRES_HOST_PORT` if needed) to avoid colliding with a host PostgreSQL service; client and API ports are also local-only and can be changed with `CLIENT_HOST_PORT` and `SERVER_HOST_PORT`.
+
+### Configure and start
+
+From the repository root in PowerShell, create the local environment file and replace both placeholder secrets with private values:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
+Build the development images, start PostgreSQL, and run the schema-aware migrations before starting the API and frontend:
+
+```powershell
+docker compose build
+docker compose up -d db
+docker compose --profile tools run --rm migrate
+docker compose up -d server client
+```
+
+The database health check gates the migration and API startup. On a new volume, PostgreSQL initializes from the current `server/schema.sql`; the migration command recognizes that the latest schema is already present and skips both migrations. On an existing volume, it applies only missing migrations. If it detects a partially applied migration, it stops with an error for manual inspection instead of guessing.
+
+Open `http://localhost:5173`. The client sends API requests to the same-origin `/api` path. In development, Vite proxies `/api` to the Compose `server` service; the browser never needs to resolve the Docker-only hostname. `VITE_API_URL=/api` is set in the Compose client environment and Vite embeds it when starting/building the client. The proxy target is `http://server:3000`.
+
+### Inspect and stop
+
+```powershell
+docker compose ps
+docker compose logs -f client server db
+docker compose stop
+```
+
+`docker compose stop` stops containers but preserves them and the database volume. `docker compose down` removes the containers and network but preserves the database volume. **Do not use `docker compose down --volumes` unless you intentionally want to permanently delete the Compose database data.** The `.env` file is local configuration and must not be committed.
+
+After changing dependencies or Dockerfiles, rebuild with `docker compose build`. Source files under `client/src` and `server/src` are mounted into their development containers for live reload.
+
+### Existing databases and migrations
+
+The initialization SQL runs only when PostgreSQL creates an empty data directory. It does not overwrite a populated database. The migration runner checks the actual columns and constraints before applying:
+
+- `server/migrations/001_true_false_questions.sql`
+- `server/migrations/002_user_profiles.sql`
+
+Run `docker compose --profile tools run --rm migrate` after starting `db`, and before starting `server`, when upgrading an existing Compose database. Take a database backup first for important data. Never copy a different database over the Compose volume or remove the volume as a migration shortcut. Compose uses its own named volume and does not automatically attach to or modify a PostgreSQL service running on the host; migrating host data requires a deliberate `pg_dump`/restore into a separately prepared database.
+
+The currently running development Compose database was populated by a one-time migration from the separate host database. A fresh checkout or newly created Compose volume receives the schema, not that data. To migrate another database, first verify the destination is empty or plan a reviewed merge, take backups, and transfer rows in foreign-key order while preserving IDs and resetting sequences. Never restore over existing data without an explicit backup and merge plan.
+
+### Production image targets
+
+Both Dockerfiles include production targets. Build them from the repository root:
+
+```powershell
+docker build --target production -f server/Dockerfile -t holocron-server .
+docker build --target production -f client/Dockerfile -t holocron-client .
+```
+
+The server production image installs only production dependencies and runs as the non-root Node user. The client production image serves the static Vite build with Nginx and proxies `/api` to a service named `server` on the same Docker network. `VITE_API_URL` is a Vite build-time value, not a runtime container setting; this image uses `/api` so one build can work behind the Nginx proxy without embedding a host-specific API URL. For a non-Docker static host, set `VITE_API_URL` to that deployment's public API origin before building.
+
+### Troubleshooting
+
+- Check readiness and startup errors with `docker compose ps` and `docker compose logs -f db server client`.
+- If the API cannot connect, confirm `PGHOST=db` is supplied by Compose and that `db` reports healthy.
+- If the database port is already in use, change `POSTGRES_HOST_PORT` in `.env`; the API connects to the internal `db:5432` port and is unaffected by this host-port setting.
+- If login or browser requests fail due to CORS, confirm `CLIENT_ORIGIN` matches the browser origin (default `http://localhost:5173`) and restart `server`.
+- If the database refuses its configured password, update the local `.env`; an already-initialized PostgreSQL volume retains its original credentials. Do not delete the volume to change a password; update the database user's password deliberately.
+- If Vite uses stale client configuration, restart or rebuild `client`; `VITE_*` settings are read when Vite starts or at build time.
+
 ## Gameplay
 
 Players can choose an option, move between questions with **Previous question** and **Next question**, or skip a question. At the review screen they can see which questions are answered or skipped and revisit any question before submitting. Answers and the current position are stored in browser `sessionStorage` per quiz, so a refresh in the same tab resumes the in-progress attempt. This is not a cross-tab, cross-device, or account-level save.
@@ -122,14 +191,17 @@ Open the Vite URL (normally `http://localhost:5173`). Configure `CLIENT_ORIGIN=h
 
 ## Deployment plan
 
-1. **Database — Neon:** Create a PostgreSQL database and use its connection string as the Render service's `DATABASE_URL`. Apply `server/schema.sql` to the Neon database with `psql` or the Neon SQL editor.
+Render is a separate deployment environment; it does not use the local Docker Compose database or its named volume. Create a Render PostgreSQL database and connect it to the Render API. Local accounts, quizzes, questions, attempts, and avatars will not appear on Render unless you deliberately export and import them.
+
+1. **Database — Render PostgreSQL:** Create a PostgreSQL database and use its connection string as the Render service's `DATABASE_URL`. Apply `server/schema.sql` to a new/empty database, or safely apply the documented migrations to an existing database. Back up existing data before schema changes.
 2. **API — Render:** Create a web service using `server` as its root directory, `npm install` as its build command, and `npm start` as its start command. Configure:
-   - `DATABASE_URL`: Neon connection string (keep server-side; enable SSL as required by the provider).
+   - `DATABASE_URL`: Render PostgreSQL connection string (keep server-side; enable SSL as required by the provider).
    - `JWT_SECRET`: a strong, private production secret.
    - `CLIENT_ORIGIN`: exact deployed frontend origin, such as `https://your-site.netlify.app`.
    - `PORT`: use Render's assigned port if the platform does not set it automatically.
-3. **Frontend — Netlify or Vercel:** Set `client` as the project root, `npm run build` as the build command, and `dist` as the output directory. Set `VITE_API_URL` to the deployed Render API origin. This value is embedded in the public frontend build and must never contain a secret.
+3. **Frontend — static host:** Set `client` as the project root, `npm run build` as the build command, and `dist` as the output directory. Set `VITE_API_URL` to the deployed Render API origin. This value is embedded in the public frontend build and must never contain a secret.
 4. Configure the frontend host's SPA fallback so React Router paths resolve to `index.html`, and set the Render `CLIENT_ORIGIN` to the final deployed domain. Rebuild/redeploy the frontend after changing `VITE_API_URL`.
+5. To transfer local data to production, back up both databases and use a deliberate PostgreSQL export/import after confirming the Render destination and schema. Do not point production at a local Docker volume or overwrite a non-empty production database with a local dump.
 
 ## Risks & mitigations
 

@@ -45,3 +45,18 @@ Holocron is a web app where users can browse, create, and play Star Wars quizzes
 - Use Bootstrap 5 responsive utilities and components for application layout, navigation, cards, buttons, and forms.
 - Preserve the Holocron visual theme with a dark background, gold accent (`#ffe81f`), and blue accent (`#4f9dff`) using a small custom stylesheet.
 - Keep quiz answer selection feedback, navigation, and responsive profile/avatar layouts accessible and usable on mobile and desktop.
+
+## Local container development
+
+- Provide Docker Compose services for the React/Vite client, Express API, and PostgreSQL with persistent database storage.
+- Keep secrets in local environment configuration, connect the API to PostgreSQL by Compose service name, and gate startup on database health.
+- Route browser API calls through a same-origin proxy so browser clients do not use Docker-only service hostnames. Document Vite's build-time environment behavior.
+- Initialize fresh databases from the current schema and safely detect/apply pending migrations for existing Compose data without resetting or overwriting it.
+- Provide production Docker image targets and document build, startup, data persistence, migration, and troubleshooting steps.
+
+## Deployment and data separation
+
+- Treat each deployment database as separate from local host PostgreSQL and the Docker Compose PostgreSQL volume; data is not synchronized automatically.
+- Configure hosted database credentials and JWT secrets only in backend environment settings, never in the frontend build or source control.
+- Provide documented, backup-first schema migration and intentional data transfer guidance. Never silently replace a non-empty hosted database with local development data.
+- Configure the browser-facing API URL for the selected frontend hosting model. Vite `VITE_*` values are public build-time configuration and must not contain secrets.

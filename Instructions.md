@@ -4,6 +4,26 @@ Holocron is a Star Wars quiz app for discovering quizzes, creating your own mult
 
 The responsive interface uses Bootstrap 5 with Holocron's dark background, gold, and blue theme.
 
+For the Docker development setup, environment variables, and container commands, follow the **Docker local development** section in [README.md](./README.md).
+
+## Run with Docker Compose
+
+From the project root, copy `.env.example` to `.env`, set private values for `POSTGRES_PASSWORD` and `JWT_SECRET`, then build and start the services:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+docker compose build
+docker compose up -d db
+docker compose --profile tools run --rm migrate
+docker compose up -d server client
+docker compose ps
+```
+
+Open `http://localhost:5173`. The browser calls the same-origin `/api` route; the Vite development proxy forwards it to the API container. PostgreSQL data persists in the `holocron-postgres-data` volume. `docker compose stop` and `docker compose down` preserve the volume; do not use `docker compose down --volumes` unless permanent deletion is intended.
+
+The host PostgreSQL service, the Compose database, and a hosted Render database are separate databases. Data does not flow between them automatically. The current development Compose database was populated from the host database, but a fresh install or fresh volume contains only the schema. Back up and verify the destination before any intentional data import; never overwrite a non-empty hosted database with a local dump. See the README for environment variables, migration details, production deployment, and troubleshooting.
+
 ## What you can do
 
 - **Browse quizzes:** View public quizzes, search by title, and see each quiz's category, author, difficulty, and number of questions.
